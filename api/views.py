@@ -48,9 +48,26 @@ class NoteView(APIView):
     authentication_classes = [TokenAuthentication, SessionAuthentication]
 
     # ENDPOINT: retrives specific note by note_id
+    def patch(self, request, note_id):
+        try:
+            print(request.data)
+            note = Note.objects.get(id=note_id)
+            serializer = NoteSerializer(note, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                print(serializer.data)
+                return Response(serializer.data)
+            else:
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Note.DoesNotExist:
+            return Response({"message": "Note not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"message": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     def get(self, request, note_id):
         try:
             note = Note.objects.get(id=note_id)
+            serialized = NoteSerializer(note)
             return Response(serialized.data, status=status.HTTP_200_OK)
         except Note.DoesNotExist:
             return Response({"message": "Note not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -59,15 +76,18 @@ class NoteView(APIView):
 
 
 class URLView(APIView):
-    permission_classes = [IsAuthenticated]
-    authentication_classes = [TokenAuthentication, SessionAuthentication]
+    # permission_classes = [IsAuthenticated]
+    # authentication_classes = [TokenAuthentication, SessionAuthentication]
 
     # ENDPOINT: retrives specific note by URL
     def post(self, request):
         try:
-            note = Note.objects.get(url=request.data.url)
-            return Response(serialized.data, status=status.HTTP_200_OK)
-            return Response({})
+            note = Note.objects.filter(
+                url=request.data["url"]).order_by('-date_created')[0]
+            serialized = NoteSerializer(note)
+            if request.data["user_id"] == str(serialized.data["user"]):
+                return Response(serialized.data, status=status.HTTP_200_OK)
+            return Response({"message": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
         except Note.DoesNotExist:
             return Response({"message": "Note not found"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
@@ -113,7 +133,10 @@ class SignUpView(APIView):
             user.set_password(request.data['password'])
             user.save()
             token = Token.objects.create(user=user)
-            return Response({"token": token.key, "user": serializer.data})
+            response = Response(
+                {"token": token.key, "username": serializer.data["username"], "id": serializer.data["id"]})
+            response.set_cookie(key="wn_auth_token", value=token.key)
+            return response
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
